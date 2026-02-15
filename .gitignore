@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+*.so
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# ML artifacts
+*.pth
+*.pt
+saved/
+checkpoints/
+log/
+log_tensorboard/
+
+# OS
+.DS_Store

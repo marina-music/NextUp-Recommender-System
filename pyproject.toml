@@ -1,0 +1,27 @@
+[project]
+name = "fusion"
+version = "0.1.0"
+description = "Mamba4Rec with LLM Fusion for mood-aware recommendations"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "recbole>=1.1.1",
+    "sentence-transformers>=2.2.0",
+]
+
+[project.optional-dependencies]
+# mamba-ssm requires Linux + CUDA
+gpu = [
+    "mamba-ssm>=1.0.0; sys_platform == 'linux'",
+    "causal-conv1d>=1.0.0; sys_platform == 'linux'",
+]
+# Redis for production mood store
+redis = ["redis>=4.0.0"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+]
