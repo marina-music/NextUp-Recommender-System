@@ -14,12 +14,99 @@ Key modifications from original:
 
 import torch
 from torch import nn
-from mamba_ssm import Mamba
+from torch.nn import functional as F
 from recbole.model.abstract_recommender import SequentialRecommender
 from recbole.model.loss import BPRLoss
 
+try:
+    from mamba_ssm import Mamba
+except ImportError:
+    Mamba = None
+
 from fusion import PreferenceFusion, AdaptivePreferenceFusion
 from llm_projection import LLMProjection, LLMProjectionWithAlignment
+
+
+class MambaPureTorch(nn.Module):
+    """
+    Pure PyTorch implementation of the Mamba selective scan block.
+    Used as a fallback when mamba_ssm is not installed.
+    """
+
+    def __init__(self, d_model, d_state=16, d_conv=4, expand=2):
+        super().__init__()
+        self.d_model = d_model
+        self.d_state = d_state
+        self.d_conv = d_conv
+        self.d_inner = d_model * expand
+
+        # Input projection: x -> (z, x)
+        self.in_proj = nn.Linear(d_model, self.d_inner * 2, bias=False)
+
+        # Depthwise conv
+        self.conv1d = nn.Conv1d(
+            self.d_inner, self.d_inner, d_conv,
+            padding=d_conv - 1, groups=self.d_inner, bias=True
+        )
+
+        # SSM projections
+        self.x_proj = nn.Linear(self.d_inner, d_state * 2 + 1, bias=False)  # B, C, dt
+        self.dt_proj = nn.Linear(1, self.d_inner, bias=True)
+
+        # SSM parameters
+        A = torch.arange(1, d_state + 1, dtype=torch.float32).unsqueeze(0).expand(self.d_inner, -1)
+        self.A_log = nn.Parameter(torch.log(A))
+        self.D = nn.Parameter(torch.ones(self.d_inner))
+
+        # Output projection
+        self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
+
+    def forward(self, x):
+        """x: (B, L, D)"""
+        B, L, _ = x.shape
+
+        xz = self.in_proj(x)  # (B, L, 2*d_inner)
+        x_inner, z = xz.chunk(2, dim=-1)  # each (B, L, d_inner)
+
+        # Conv
+        x_inner = x_inner.transpose(1, 2)  # (B, d_inner, L)
+        x_inner = self.conv1d(x_inner)[:, :, :L]  # causal: trim to L
+        x_inner = x_inner.transpose(1, 2)  # (B, L, d_inner)
+        x_inner = F.silu(x_inner)
+
+        # SSM parameters from input
+        x_ssm = self.x_proj(x_inner)  # (B, L, d_state*2 + 1)
+        B_param = x_ssm[:, :, :self.d_state]  # (B, L, d_state)
+        C_param = x_ssm[:, :, self.d_state:2*self.d_state]  # (B, L, d_state)
+        dt = x_ssm[:, :, -1:]  # (B, L, 1)
+        dt = F.softplus(self.dt_proj(dt))  # (B, L, d_inner)
+
+        # Discretize A
+        A = -torch.exp(self.A_log)  # (d_inner, d_state)
+
+        # Selective scan (sequential)
+        h = torch.zeros(B, self.d_inner, self.d_state, device=x.device, dtype=x.dtype)
+        ys = []
+        for t in range(L):
+            dt_t = dt[:, t]  # (B, d_inner)
+            B_t = B_param[:, t]  # (B, d_state)
+            C_t = C_param[:, t]  # (B, d_state)
+            x_t = x_inner[:, t]  # (B, d_inner)
+
+            # h = exp(A * dt) * h + dt * B * x
+            dA = torch.exp(A.unsqueeze(0) * dt_t.unsqueeze(-1))  # (B, d_inner, d_state)
+            dB = dt_t.unsqueeze(-1) * B_t.unsqueeze(1)  # (B, d_inner, d_state)
+            h = dA * h + dB * x_t.unsqueeze(-1)  # (B, d_inner, d_state)
+
+            y_t = (h * C_t.unsqueeze(1)).sum(dim=-1)  # (B, d_inner)
+            ys.append(y_t)
+
+        y = torch.stack(ys, dim=1)  # (B, L, d_inner)
+        y = y + x_inner * self.D.unsqueeze(0).unsqueeze(0)
+
+        # Gate and output
+        y = y * F.silu(z)
+        return self.out_proj(y)
 
 
 class Mamba4RecFusion(SequentialRecommender):
@@ -51,10 +138,10 @@ class Mamba4RecFusion(SequentialRecommender):
         self.expand = config["expand"]
 
         # LLM Fusion hyperparameters
-        self.use_llm_fusion = config.get("use_llm_fusion", False)
-        self.llm_dim = config.get("llm_dim", 768)
-        self.fusion_dropout = config.get("fusion_dropout", 0.1)
-        self.vector_gate = config.get("vector_gate", False)
+        self.use_llm_fusion = config["use_llm_fusion"] if "use_llm_fusion" in config else False
+        self.llm_dim = config["llm_dim"] if "llm_dim" in config else 768
+        self.fusion_dropout = config["fusion_dropout"] if "fusion_dropout" in config else 0.1
+        self.vector_gate = config["vector_gate"] if "vector_gate" in config else False
 
         # Item embeddings
         self.item_embedding = nn.Embedding(
@@ -397,7 +484,8 @@ class MambaLayer(nn.Module):
     def __init__(self, d_model, d_state, d_conv, expand, dropout, num_layers):
         super().__init__()
         self.num_layers = num_layers
-        self.mamba = Mamba(
+        MambaBlock = Mamba if Mamba is not None else MambaPureTorch
+        self.mamba = MambaBlock(
             d_model=d_model,
             d_state=d_state,
             d_conv=d_conv,

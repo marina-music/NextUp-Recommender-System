@@ -13,12 +13,22 @@ Usage:
 """
 
 import sys
+import os
 import argparse
 import logging
 from logging import getLogger
 from pathlib import Path
 
 import torch
+
+# RecBole's Trainer uses torch.load without weights_only=False,
+# which fails on PyTorch 2.6+ where the default changed to True.
+_orig_torch_load = torch.load
+def _patched_torch_load(*args, **kwargs):
+    if "weights_only" not in kwargs:
+        kwargs["weights_only"] = False
+    return _orig_torch_load(*args, **kwargs)
+torch.load = _patched_torch_load
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
