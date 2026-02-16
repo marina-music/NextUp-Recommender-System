@@ -18,8 +18,9 @@ fusion_dropout: 0.1             # (float) Dropout rate in fusion layers
 vector_gate: True               # (bool) Use per-dimension gating instead of scalar
 
 # dataset settings
-dataset: ml-1m
-MAX_ITEM_LIST_LENGTH: 200       # 200 for MovieLens-1M
+dataset: ml-latest-small
+data_path: ../data/
+MAX_ITEM_LIST_LENGTH: 200
 
 # dataset: amazon-beauty
 # dataset: amazon-video-games
