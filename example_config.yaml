@@ -1,0 +1,110 @@
+# Mamba4Rec Fusion Configuration
+# Copy this file to config.yaml and modify as needed
+
+# =============================================================================
+# Dataset Configuration
+# =============================================================================
+data_path: ./data/
+dataset: ml-1m  # MovieLens 1M, or your custom dataset name
+
+# Data loading
+USER_ID_FIELD: user_id
+ITEM_ID_FIELD: item_id
+TIME_FIELD: timestamp
+load_col:
+  inter: [user_id, item_id, timestamp]
+
+# Sequence settings
+MAX_ITEM_LIST_LENGTH: 50  # Maximum sequence length
+
+# =============================================================================
+# Model Configuration
+# =============================================================================
+model: Mamba4RecFusion
+
+# Mamba architecture
+hidden_size: 64           # Hidden dimension (d_model for Mamba)
+num_layers: 2             # Number of Mamba layers
+inner_size: 256           # FFN inner dimension (4x hidden_size recommended)
+
+# LLM fusion settings
+llm_dim: 768              # Sentence transformer output dimension
+use_llm_fusion: false     # Enable in Phase 2+ (false for Phase 1)
+fusion_dropout: 0.1       # Dropout in fusion layers
+
+# Mamba-specific (when using mamba-ssm)
+d_state: 16               # State dimension
+d_conv: 4                 # Convolution width
+expand: 2                 # Expansion factor
+
+# Loss function
+loss_type: BPR            # BPR (pairwise) or CE (cross-entropy)
+
+# =============================================================================
+# Training Configuration - Phase 1 (Vanilla Mamba)
+# =============================================================================
+epochs: 100
+learning_rate: 0.001
+train_batch_size: 256
+eval_batch_size: 512
+
+# Optimizer
+weight_decay: 0.0
+adam_beta1: 0.9
+adam_beta2: 0.999
+
+# Learning rate scheduler
+learning_rate_scheduler: null  # or 'cosine', 'linear'
+# warmup_steps: 1000
+
+# =============================================================================
+# Training Configuration - Phase 2 (Fusion Alignment)
+# =============================================================================
+phase2_epochs: 50
+phase2_learning_rate: 0.0005
+# Note: Mamba layers are frozen during this phase
+
+# =============================================================================
+# Training Configuration - Phase 3 (Joint Fine-tuning)
+# =============================================================================
+phase3_epochs: 30
+phase3_learning_rate: 0.0001
+ewc_lambda: 0.4           # EWC regularization strength (higher = more stable)
+
+# =============================================================================
+# Evaluation Configuration
+# =============================================================================
+eval_args:
+  split:
+    LS: valid_and_test
+  order: TO               # Temporal order
+  group_by: user
+  mode: full              # or 'uni100', 'pop100'
+
+metrics: [Recall, NDCG, MRR, Hit]
+topk: [5, 10, 20]
+valid_metric: NDCG@10
+
+# =============================================================================
+# Device and Performance
+# =============================================================================
+device: cuda              # cuda or cpu
+use_gpu: true
+gpu_id: 0
+
+# Reproducibility
+seed: 42
+reproducibility: true
+
+# =============================================================================
+# Checkpointing
+# =============================================================================
+checkpoint_dir: ./checkpoints/
+save_step: 10             # Save checkpoint every N epochs
+# early_stopping: 10      # Stop if no improvement for N epochs
+
+# =============================================================================
+# Logging
+# =============================================================================
+log_level: INFO
+show_progress: true

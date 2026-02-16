@@ -1,0 +1,33 @@
+name: mamba4rec-fusion
+channels:
+  - defaults
+dependencies:
+  - python=3.8
+  - pip
+  - pip:
+      # Core ML
+      - torch>=2.0.0
+      - numpy>=1.21.0
+
+      # Mamba and RecBole
+      - mamba-ssm>=1.1.4
+      - causal-conv1d>=1.2.0
+      - recbole>=1.2.0
+
+      # LLM Integration
+      - sentence-transformers>=2.2.0
+      - transformers>=4.30.0
+
+      # Storage backends (optional, for production)
+      - redis>=4.0.0
+      # - psycopg2-binary>=2.9.0  # For PostgreSQL
+      # - pgvector>=0.1.0         # For vector similarity
+
+      # Utilities
+      - tqdm>=4.60.0
+      - pyyaml>=6.0.0
+      - colorlog>=4.7.0
+
+      # Development
+      - pytest>=7.0.0
+      - black>=22.0.0

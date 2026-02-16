@@ -9,6 +9,8 @@ dependencies = [
     "numpy>=1.24.0",
     "recbole>=1.1.1",
     "sentence-transformers>=2.2.0",
+    "tqdm>=4.65.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

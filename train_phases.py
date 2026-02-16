@@ -21,6 +21,7 @@ from pathlib import Path
 import torch
 from torch.optim import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from tqdm import tqdm
 
 from recbole.utils import init_logger, init_seed, set_color
 from recbole.trainer import Trainer
