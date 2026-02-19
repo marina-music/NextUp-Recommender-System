@@ -6,7 +6,7 @@ from pathlib import Path
 
 import polars as pl
 
-from pipeline.download import DATA_DIR, REPORTS_DIR
+from pipeline.download import REPORTS_DIR
 
 
 def normalize_imdb_id(imdb_id: str) -> str:

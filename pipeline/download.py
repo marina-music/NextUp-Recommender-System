@@ -1,6 +1,5 @@
 """Download Wikipedia dump and MovieLens 32M dataset."""
 
-import os
 import urllib.request
 import zipfile
 from pathlib import Path

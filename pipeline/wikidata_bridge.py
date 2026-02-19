@@ -1,12 +1,10 @@
 """Query Wikidata SPARQL to map Wikipedia article titles to IMDb IDs."""
 
-import json
 import time
 from pathlib import Path
 
 import polars as pl
 import requests
-from tqdm import tqdm
 
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 
