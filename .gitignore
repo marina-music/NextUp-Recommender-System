@@ -24,5 +24,10 @@ checkpoints/
 log/
 log_tensorboard/
 
+# Data pipeline
+data/raw/
+data/*.parquet
+data/reports/*.parquet
+
 # OS
 .DS_Store
