@@ -21,6 +21,14 @@ gpu = [
 ]
 # Redis for production mood store
 redis = ["redis>=4.0.0"]
+# Data pipeline: Wikipedia/IMDb plot extraction & Parquet storage
+data = [
+    "polars>=1.0.0",
+    "mwxml>=0.3.3",
+    "mwparserfromhell>=0.6.5",
+    "aiohttp>=3.9.0",
+    "tqdm>=4.65.0",
+]
 
 [tool.uv]
 dev-dependencies = [
