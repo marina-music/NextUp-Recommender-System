@@ -40,7 +40,7 @@ from recbole.data import create_dataset, data_preparation
 from recbole.data.transform import construct_transform
 from recbole.utils import get_flops, get_environment
 
-from mamba4rec import Mamba4RecFusion
+from mamba4rec import Mamba4Rec
 
 
 class EWCRegularizer:
@@ -144,7 +144,7 @@ def run_phase1(config_path, save_dir):
 
     Establishes stable item geometry without LLM fusion.
     """
-    config = Config(model=Mamba4RecFusion, config_file_list=[config_path])
+    config = Config(model=Mamba4Rec, config_file_list=[config_path])
 
     # Disable fusion for Phase 1
     config["use_llm_fusion"] = False
@@ -162,7 +162,7 @@ def run_phase1(config_path, save_dir):
     train_data, valid_data, test_data = data_preparation(config, dataset)
 
     # Model
-    model = Mamba4RecFusion(config, train_data.dataset).to(config['device'])
+    model = Mamba4Rec(config, train_data.dataset).to(config['device'])
     model.set_training_phase(1)
 
     logger.info(f"Trainable parameters: {model.get_trainable_params():,}")
@@ -200,7 +200,7 @@ def run_phase2(config_path, checkpoint_path, save_dir):
     Freezes Mamba layers and item embeddings.
     Trains projection to align LLM embeddings with item geometry.
     """
-    config = Config(model=Mamba4RecFusion, config_file_list=[config_path])
+    config = Config(model=Mamba4Rec, config_file_list=[config_path])
 
     # Enable fusion for Phase 2
     config["use_llm_fusion"] = True
@@ -222,7 +222,7 @@ def run_phase2(config_path, checkpoint_path, save_dir):
     train_data, valid_data, test_data = data_preparation(config, dataset)
 
     # Model
-    model = Mamba4RecFusion(config, train_data.dataset).to(config['device'])
+    model = Mamba4Rec(config, train_data.dataset).to(config['device'])
 
     # Load Phase 1 checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=config['device'])
@@ -267,7 +267,7 @@ def run_phase3(config_path, checkpoint_path, save_dir):
     Unfreezes top Mamba layer for adaptation.
     Uses EWC regularization to prevent catastrophic forgetting.
     """
-    config = Config(model=Mamba4RecFusion, config_file_list=[config_path])
+    config = Config(model=Mamba4Rec, config_file_list=[config_path])
 
     # Enable fusion
     config["use_llm_fusion"] = True
@@ -289,7 +289,7 @@ def run_phase3(config_path, checkpoint_path, save_dir):
     train_data, valid_data, test_data = data_preparation(config, dataset)
 
     # Model
-    model = Mamba4RecFusion(config, train_data.dataset).to(config['device'])
+    model = Mamba4Rec(config, train_data.dataset).to(config['device'])
 
     # Load Phase 2 checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=config['device'])

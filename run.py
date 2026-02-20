@@ -21,7 +21,7 @@ from recbole.data import create_dataset, data_preparation
 from recbole.data.transform import construct_transform
 from recbole.utils import get_flops, get_environment
 
-from mamba4rec import Mamba4RecFusion
+from mamba4rec import Mamba4Rec
 
 
 def main():
@@ -32,7 +32,7 @@ def main():
                         help="Path to config file")
     args = parser.parse_args()
 
-    config = Config(model=Mamba4RecFusion, config_file_list=[args.config])
+    config = Config(model=Mamba4Rec, config_file_list=[args.config])
 
     # Override fusion setting if specified
     if args.fusion:
@@ -57,7 +57,7 @@ def main():
 
     # Model loading and initialization
     init_seed(config["seed"] + config["local_rank"], config["reproducibility"])
-    model = Mamba4RecFusion(config, train_data.dataset).to(config['device'])
+    model = Mamba4Rec(config, train_data.dataset).to(config['device'])
     logger.info(model)
 
     # Log parameter counts
