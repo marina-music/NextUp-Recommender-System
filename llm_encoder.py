@@ -1,85 +1,58 @@
-"""
-LLM Encoder Module for Mamba4Rec Fusion
+"""BGE encoder for plot embeddings and user queries.
 
-This module provides utilities for encoding user messages and movie descriptions
-into embeddings using sentence transformers.
-
-The encoder:
-- Uses a pre-trained sentence transformer model
-- Supports batched encoding for efficiency
-- Provides intent parsing to extract structured mood information
-- Caches embeddings for repeated queries
+Uses BAAI/bge-large-en-v1.5 (1024-dim) for both plot encoding
+and query encoding — must be the same model/space.
 """
+import hashlib
+from functools import lru_cache
+from typing import Dict, List, Optional, Union
 
 import torch
-from typing import List, Dict, Optional, Union
-from functools import lru_cache
-import hashlib
+
+EMBEDDING_DIM = 1024
+DEFAULT_MODEL = "BAAI/bge-large-en-v1.5"
 
 
 class LLMEncoder:
-    """
-    Encoder for converting text to embeddings using sentence transformers.
+    """Encodes text into BGE embedding space.
 
-    Args:
-        model_name: Name of the sentence transformer model
-                   (default: "all-MiniLM-L6-v2" for speed, or
-                    "all-mpnet-base-v2" for quality)
-        device: Device to run the model on
-        cache_size: Number of embeddings to cache
+    Same model is used for plots (documents) and queries (search).
+    BGE recommends prefixing queries with an instruction for retrieval.
     """
 
     def __init__(
         self,
-        model_name: str = "all-MiniLM-L6-v2",
-        device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        cache_size: int = 10000
+        model_name: str = DEFAULT_MODEL,
+        device: str = None,
+        cache_size: int = 10000,
     ):
-        self.model_name = model_name
-        self.device = device
-        self.cache_size = cache_size
-
-        # Lazy loading of sentence transformers
+        self._model_name = model_name
+        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._model = None
-        self._embedding_dim = None
-
-        # Simple cache using LRU
-        self._cache = {}
-        self._cache_order = []
+        self._cache: Dict[str, torch.Tensor] = {}
+        self._cache_order: List[str] = []
+        self._cache_size = cache_size
 
     @property
     def model(self):
-        """Lazy load the sentence transformer model."""
         if self._model is None:
-            try:
-                from sentence_transformers import SentenceTransformer
-                self._model = SentenceTransformer(self.model_name, device=self.device)
-                self._embedding_dim = self._model.get_sentence_embedding_dimension()
-            except ImportError:
-                raise ImportError(
-                    "sentence-transformers is required. "
-                    "Install with: pip install sentence-transformers"
-                )
+            from sentence_transformers import SentenceTransformer
+            self._model = SentenceTransformer(self._model_name, device=self._device)
         return self._model
 
     @property
     def embedding_dim(self) -> int:
-        """Get the dimension of embeddings produced by the model."""
-        if self._embedding_dim is None:
-            _ = self.model  # Trigger lazy loading
-        return self._embedding_dim
+        return EMBEDDING_DIM
 
     def _get_cache_key(self, text: str) -> str:
-        """Generate cache key from text."""
         return hashlib.md5(text.encode()).hexdigest()
 
     def _add_to_cache(self, key: str, embedding: torch.Tensor):
-        """Add embedding to cache with LRU eviction."""
-        if len(self._cache) >= self.cache_size:
-            # Evict oldest entry
-            oldest_key = self._cache_order.pop(0)
-            del self._cache[oldest_key]
-
+        if key in self._cache:
+            return
+        if len(self._cache) >= self._cache_size:
+            oldest = self._cache_order.pop(0)
+            self._cache.pop(oldest, None)
         self._cache[key] = embedding
         self._cache_order.append(key)
 
@@ -87,225 +60,139 @@ class LLMEncoder:
         self,
         texts: Union[str, List[str]],
         return_tensors: bool = True,
-        use_cache: bool = True
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
-        """
-        Encode text(s) to embeddings.
+        use_cache: bool = True,
+    ) -> torch.Tensor:
+        """Encode raw text(s) into BGE embeddings.
 
-        Args:
-            texts: Single text or list of texts to encode
-            return_tensors: If True, return PyTorch tensors
-            use_cache: If True, use caching for repeated queries
-
-        Returns:
-            Embeddings as tensor [B, embedding_dim] or list of tensors
+        For retrieval tasks, use encode_query or encode_plot instead.
         """
-        single_input = isinstance(texts, str)
-        if single_input:
+        if isinstance(texts, str):
             texts = [texts]
 
-        embeddings = []
-        texts_to_encode = []
-        text_indices = []
+        results = [None] * len(texts)
+        to_encode = []
+        to_encode_idx = []
 
-        # Check cache
-        for i, text in enumerate(texts):
-            if use_cache:
+        if use_cache:
+            for i, text in enumerate(texts):
                 key = self._get_cache_key(text)
                 if key in self._cache:
-                    embeddings.append((i, self._cache[key]))
-                    continue
+                    results[i] = self._cache[key]
+                else:
+                    to_encode.append(text)
+                    to_encode_idx.append(i)
+        else:
+            to_encode = texts
+            to_encode_idx = list(range(len(texts)))
 
-            texts_to_encode.append(text)
-            text_indices.append(i)
-
-        # Encode uncached texts
-        if texts_to_encode:
-            new_embeddings = self.model.encode(
-                texts_to_encode,
-                convert_to_tensor=True,
-                device=self.device
+        if to_encode:
+            embeddings = self.model.encode(
+                to_encode,
+                convert_to_tensor=return_tensors,
+                show_progress_bar=len(to_encode) > 100,
+                normalize_embeddings=True,
             )
+            if return_tensors:
+                embeddings = embeddings.to(self._device)
 
-            for idx, (i, text) in enumerate(zip(text_indices, texts_to_encode)):
-                emb = new_embeddings[idx]
+            for idx, emb_idx in enumerate(to_encode_idx):
+                if len(to_encode) == 1 and embeddings.dim() == 1:
+                    emb = embeddings
+                else:
+                    emb = embeddings[idx]
+                results[emb_idx] = emb
                 if use_cache:
-                    key = self._get_cache_key(text)
-                    self._add_to_cache(key, emb)
-                embeddings.append((i, emb))
+                    self._add_to_cache(self._get_cache_key(to_encode[idx]), emb)
 
-        # Sort by original index and extract embeddings
-        embeddings.sort(key=lambda x: x[0])
-        embeddings = [e[1] for e in embeddings]
+        stacked = torch.stack(results)
+        return stacked
 
-        if return_tensors:
-            embeddings = torch.stack(embeddings)
+    def encode_query(self, query: str) -> torch.Tensor:
+        """Encode a user search query.
 
-        if single_input:
-            return embeddings[0] if return_tensors else embeddings[0]
-
-        return embeddings
-
-    def encode_mood(self, user_message: str) -> torch.Tensor:
+        BGE recommends prefixing queries with an instruction
+        for asymmetric retrieval tasks.
         """
-        Encode a user mood/intent message.
+        prefixed = f"Represent this sentence for searching relevant passages: {query}"
+        return self.encode(prefixed, use_cache=False).squeeze(0)
 
-        This is a convenience method that applies any mood-specific preprocessing.
+    def encode_plot(self, plot_text: str) -> torch.Tensor:
+        """Encode a movie plot/overview (document side)."""
+        return self.encode(plot_text).squeeze(0)
 
-        Args:
-            user_message: User's mood description (e.g., "I want a cozy movie")
-
-        Returns:
-            Mood embedding [embedding_dim]
-        """
-        # Optionally preprocess the message to emphasize mood keywords
-        processed = self._preprocess_mood(user_message)
-        return self.encode(processed, return_tensors=True)
-
-    def _preprocess_mood(self, message: str) -> str:
-        """
-        Preprocess mood message to emphasize relevant terms.
-
-        This can be customized based on your application needs.
-        """
-        # For now, just clean and normalize
-        message = message.strip().lower()
-
-        # Add context for better embedding
-        if not any(word in message for word in ["movie", "film", "watch"]):
-            message = f"I want to watch a movie that is {message}"
-
-        return message
-
-    def encode_movie_description(self, description: str) -> torch.Tensor:
-        """
-        Encode a movie description for alignment training.
-
-        Args:
-            description: Movie description text
-
-        Returns:
-            Description embedding [embedding_dim]
-        """
-        return self.encode(description, return_tensors=True)
+    def encode_plots_batch(
+        self, texts: List[str], batch_size: int = 64
+    ) -> torch.Tensor:
+        """Encode multiple plot texts in batches."""
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            embs = self.encode(batch, use_cache=False)
+            all_embeddings.append(embs)
+        return torch.cat(all_embeddings, dim=0)
 
 
 class IntentParser:
-    """
-    Parser for extracting structured intent from user messages.
+    """Parse user messages for mood, genre, era, and constraints."""
 
-    Extracts:
-    - mood: emotional tone (cozy, exciting, scary, etc.)
-    - genre: movie genre preferences
-    - era: time period preferences
-    - style: directorial/cinematographic style
-    - constraints: specific requirements (not too long, no violence, etc.)
-    """
-
-    # Mood keywords
     MOOD_KEYWORDS = {
-        "cozy": ["cozy", "warm", "comfortable", "comforting", "heartwarming"],
-        "exciting": ["exciting", "thrilling", "action", "intense", "adrenaline"],
-        "scary": ["scary", "horror", "frightening", "creepy", "spooky"],
-        "funny": ["funny", "comedy", "hilarious", "laughing", "humorous"],
-        "sad": ["sad", "depressing", "emotional", "crying", "tearjerker"],
-        "romantic": ["romantic", "love", "romance", "relationship"],
-        "thoughtful": ["thoughtful", "deep", "philosophical", "thought-provoking"],
-        "relaxing": ["relaxing", "chill", "calm", "peaceful", "laid-back"],
+        "cozy": ["cozy", "warm", "comfort", "heartwarming", "feel-good", "feelgood"],
+        "exciting": ["exciting", "thrilling", "intense", "edge of seat", "adrenaline"],
+        "scary": ["scary", "horror", "frightening", "terrifying", "creepy", "spooky"],
+        "funny": ["funny", "comedy", "hilarious", "laugh", "humorous", "witty"],
+        "sad": ["sad", "emotional", "cry", "tearjerker", "melancholy", "bittersweet"],
+        "romantic": ["romantic", "love", "romance", "love story", "passionate"],
+        "thoughtful": ["thoughtful", "deep", "philosophical", "thought-provoking", "cerebral", "mind-bending"],
+        "relaxing": ["relaxing", "chill", "calm", "peaceful", "soothing", "easy-going"],
     }
 
-    # Genre keywords
     GENRE_KEYWORDS = {
-        "action": ["action", "fighting", "combat", "martial arts"],
-        "comedy": ["comedy", "funny", "humor", "sitcom"],
-        "drama": ["drama", "dramatic", "serious"],
-        "horror": ["horror", "scary", "slasher", "supernatural"],
+        "action": ["action", "fight", "martial arts", "battle"],
+        "comedy": ["comedy", "funny", "sitcom"],
+        "drama": ["drama", "dramatic"],
+        "horror": ["horror", "zombie", "slasher"],
         "scifi": ["sci-fi", "science fiction", "space", "futuristic", "cyberpunk"],
-        "fantasy": ["fantasy", "magical", "dragons", "wizards"],
-        "thriller": ["thriller", "suspense", "mystery", "crime"],
+        "fantasy": ["fantasy", "magic", "wizard", "dragon"],
+        "thriller": ["thriller", "suspense", "mystery", "detective"],
         "romance": ["romance", "romantic", "love story"],
         "documentary": ["documentary", "true story", "real life"],
-        "animation": ["animation", "animated", "cartoon", "anime"],
+        "animation": ["animated", "animation", "cartoon", "anime", "pixar"],
     }
 
-    # Era keywords
     ERA_KEYWORDS = {
-        "classic": ["classic", "old", "vintage", "golden age"],
+        "classic": ["classic", "old", "golden age", "vintage"],
         "80s": ["80s", "1980s", "eighties"],
         "90s": ["90s", "1990s", "nineties"],
-        "2000s": ["2000s", "early 2000s", "aughts"],
-        "2010s": ["2010s", "twenty tens"],
+        "2000s": ["2000s", "early 2000s"],
+        "2010s": ["2010s", "twenty-tens"],
         "recent": ["recent", "new", "latest", "modern", "contemporary"],
     }
 
-    def parse(self, message: str) -> Dict[str, any]:
-        """
-        Parse user message to extract structured intent.
-
-        Args:
-            message: User's movie preference message
-
-        Returns:
-            Dictionary with extracted intent components
-        """
-        message_lower = message.lower()
-
-        intent = {
+    def parse(self, message: str) -> dict:
+        text = message.lower()
+        return {
             "raw_text": message,
-            "mood": self._extract_matches(message_lower, self.MOOD_KEYWORDS),
-            "genre": self._extract_matches(message_lower, self.GENRE_KEYWORDS),
-            "era": self._extract_matches(message_lower, self.ERA_KEYWORDS),
-            "constraints": self._extract_constraints(message_lower),
+            "mood": self._extract_matches(text, self.MOOD_KEYWORDS),
+            "genre": self._extract_matches(text, self.GENRE_KEYWORDS),
+            "era": self._extract_matches(text, self.ERA_KEYWORDS),
+            "constraints": self._extract_constraints(text),
         }
 
-        return intent
-
-    def _extract_matches(
-        self,
-        text: str,
-        keyword_dict: Dict[str, List[str]]
-    ) -> List[str]:
-        """Extract matching categories from text."""
+    def _extract_matches(self, text: str, keyword_dict: dict) -> list:
         matches = []
         for category, keywords in keyword_dict.items():
             if any(kw in text for kw in keywords):
                 matches.append(category)
         return matches
 
-    def _extract_constraints(self, text: str) -> Dict[str, any]:
-        """Extract specific constraints from text."""
+    def _extract_constraints(self, text: str) -> dict:
         constraints = {}
-
-        # Length constraints
-        if any(phrase in text for phrase in ["not too long", "short", "under 2 hours"]):
-            constraints["max_duration"] = 120
-        if any(phrase in text for phrase in ["long", "epic", "over 2 hours"]):
+        if any(w in text for w in ["short", "quick", "under 90", "90 min"]):
+            constraints["max_duration"] = 90
+        if any(w in text for w in ["long", "epic", "over 2 hours"]):
             constraints["min_duration"] = 120
-
-        # Content constraints
-        if any(phrase in text for phrase in ["no violence", "family friendly", "kid friendly"]):
+        if any(w in text for w in ["family", "kids", "children", "family-friendly"]):
             constraints["family_friendly"] = True
-        if any(phrase in text for phrase in ["adult", "mature", "not for kids"]):
+        if any(w in text for w in ["mature", "adult", "r-rated", "graphic"]):
             constraints["mature_only"] = True
-
         return constraints
-
-
-# Convenience function for quick encoding
-def encode_user_mood(
-    message: str,
-    encoder: Optional[LLMEncoder] = None
-) -> torch.Tensor:
-    """
-    Quick function to encode a user mood message.
-
-    Args:
-        message: User's mood/intent message
-        encoder: Optional pre-initialized encoder
-
-    Returns:
-        Mood embedding tensor
-    """
-    if encoder is None:
-        encoder = LLMEncoder()
-    return encoder.encode_mood(message)
