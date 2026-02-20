@@ -1,15 +1,8 @@
 """
-Mamba4Rec with LLM Fusion
+Mamba4Rec - Sequential Recommendation with Mamba
 
-This module extends the original Mamba4Rec model to support fusion with
-LLM-derived mood and profile vectors for enhanced personalization.
-
-Key modifications from original:
-1. Integration of PreferenceFusion module
-2. Integration of LLMProjection module
-3. Fusion is applied in calculate_loss() for training
-4. Support for phased training with layer freezing
-5. Additional methods for interpretability
+Pure sequential recommender using Mamba (selective state-space) layers.
+Predicts next items from user interaction history.
 """
 
 import torch
@@ -22,9 +15,6 @@ try:
     from mamba_ssm import Mamba
 except ImportError:
     Mamba = None
-
-from fusion import PreferenceFusion, AdaptivePreferenceFusion
-from llm_projection import LLMProjection, LLMProjectionWithAlignment
 
 
 class MambaPureTorch(nn.Module):
@@ -109,14 +99,12 @@ class MambaPureTorch(nn.Module):
         return self.out_proj(y)
 
 
-class Mamba4RecFusion(SequentialRecommender):
+class Mamba4Rec(SequentialRecommender):
     """
-    Mamba4Rec with LLM Fusion for mood-aware recommendations.
+    Mamba4Rec - Sequential recommendation with Mamba layers.
 
-    This model combines:
-    - Sequential behavior modeling via Mamba layers
-    - Current mood/intent from LLM embeddings
-    - Long-term user profiles
+    Uses selective state-space (Mamba) layers to model user interaction
+    sequences and predict next items.
 
     Args:
         config: RecBole config dictionary
@@ -124,7 +112,7 @@ class Mamba4RecFusion(SequentialRecommender):
     """
 
     def __init__(self, config, dataset):
-        super(Mamba4RecFusion, self).__init__(config, dataset)
+        super(Mamba4Rec, self).__init__(config, dataset)
 
         # Core hyperparameters
         self.hidden_size = config["hidden_size"]
@@ -136,12 +124,6 @@ class Mamba4RecFusion(SequentialRecommender):
         self.d_state = config["d_state"]
         self.d_conv = config["d_conv"]
         self.expand = config["expand"]
-
-        # LLM Fusion hyperparameters
-        self.use_llm_fusion = config["use_llm_fusion"] if "use_llm_fusion" in config else False
-        self.llm_dim = config["llm_dim"] if "llm_dim" in config else 768
-        self.fusion_dropout = config["fusion_dropout"] if "fusion_dropout" in config else 0.1
-        self.vector_gate = config["vector_gate"] if "vector_gate" in config else False
 
         # Item embeddings
         self.item_embedding = nn.Embedding(
@@ -164,25 +146,6 @@ class Mamba4RecFusion(SequentialRecommender):
             ) for _ in range(self.num_layers)
         ])
 
-        # LLM Fusion components (only created if enabled)
-        if self.use_llm_fusion:
-            # LLM Projection: maps LLM embeddings to hidden_size
-            self.llm_projection = LLMProjectionWithAlignment(
-                llm_dim=self.llm_dim,
-                hidden_size=self.hidden_size,
-                dropout=self.fusion_dropout
-            )
-
-            # Preference Fusion: combines Mamba output with LLM signals
-            self.fusion = PreferenceFusion(
-                hidden_size=self.hidden_size,
-                dropout=self.fusion_dropout,
-                vector_gate=self.vector_gate
-            )
-        else:
-            self.llm_projection = None
-            self.fusion = None
-
         # Loss function
         if self.loss_type == "BPR":
             self.loss_fct = BPRLoss()
@@ -193,9 +156,6 @@ class Mamba4RecFusion(SequentialRecommender):
 
         # Initialize weights
         self.apply(self._init_weights)
-
-        # Training phase tracking
-        self._current_phase = 1
 
     def _init_weights(self, module):
         if isinstance(module, (nn.Linear, nn.Embedding)):
@@ -227,47 +187,9 @@ class Mamba4RecFusion(SequentialRecommender):
         seq_output = self.gather_indexes(item_emb, item_seq_len - 1)
         return seq_output
 
-    def _apply_fusion(self, seq_output, interaction):
-        """
-        Apply LLM fusion if enabled and signals are available.
-
-        Args:
-            seq_output: Mamba sequence output [B, hidden_size]
-            interaction: Interaction dict potentially containing LLM embeddings
-
-        Returns:
-            fused_output: Fused representation [B, hidden_size]
-        """
-        if not self.use_llm_fusion or self.fusion is None:
-            return seq_output
-
-        # Get raw LLM embeddings from interaction
-        raw_mood_emb = interaction.get("LLM_MOOD_EMB", None)
-        raw_profile_emb = interaction.get("LLM_PROFILE_EMB", None)
-
-        # Project raw LLM embeddings to hidden_size
-        m_current = None
-        p_profile = None
-
-        if raw_mood_emb is not None:
-            m_current = self.llm_projection(raw_mood_emb)
-
-        if raw_profile_emb is not None:
-            p_profile = self.llm_projection(raw_profile_emb)
-
-        # Apply fusion
-        return self.fusion(
-            s_mamba=seq_output,
-            m_current=m_current,
-            p_profile=p_profile
-        )
-
     def calculate_loss(self, interaction):
         """
-        Calculate training loss with optional fusion.
-
-        In Phase 1 (vanilla Mamba training), fusion is not applied.
-        In Phase 2+, fusion is applied if LLM embeddings are present.
+        Calculate training loss.
 
         Args:
             interaction: RecBole interaction dict
@@ -278,10 +200,6 @@ class Mamba4RecFusion(SequentialRecommender):
         item_seq = interaction[self.ITEM_SEQ]
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
         seq_output = self.forward(item_seq, item_seq_len)
-
-        # Apply fusion during training (Phase 2+)
-        if self._current_phase >= 2:
-            seq_output = self._apply_fusion(seq_output, interaction)
 
         pos_items = interaction[self.POS_ITEM_ID]
 
@@ -299,35 +217,6 @@ class Mamba4RecFusion(SequentialRecommender):
             loss = self.loss_fct(logits, pos_items)
             return loss
 
-    def calculate_loss_with_alignment(self, interaction, llm_item_emb, item_ids):
-        """
-        Calculate loss with additional alignment regularization.
-
-        Used during Phase 2 to align LLM projections with item embeddings.
-
-        Args:
-            interaction: RecBole interaction dict
-            llm_item_emb: LLM embeddings of item descriptions [B, llm_dim]
-            item_ids: Corresponding item IDs [B]
-
-        Returns:
-            total_loss: Combined recommendation and alignment loss
-        """
-        # Standard recommendation loss
-        rec_loss = self.calculate_loss(interaction)
-
-        # Alignment loss (only if LLM fusion is enabled)
-        if self.use_llm_fusion and self.llm_projection is not None:
-            item_emb = self.item_embedding(item_ids)
-            align_loss = self.llm_projection.compute_alignment_loss(
-                llm_item_emb, item_emb
-            )
-            total_loss = rec_loss + 0.1 * align_loss
-        else:
-            total_loss = rec_loss
-
-        return total_loss
-
     def predict(self, interaction):
         """
         Predict scores for specific items.
@@ -343,7 +232,6 @@ class Mamba4RecFusion(SequentialRecommender):
         test_item = interaction[self.ITEM_ID]
 
         seq_output = self.forward(item_seq, item_seq_len)
-        seq_output = self._apply_fusion(seq_output, interaction)
 
         test_item_emb = self.item_embedding(test_item)
         scores = torch.mul(seq_output, test_item_emb).sum(dim=1)
@@ -363,76 +251,10 @@ class Mamba4RecFusion(SequentialRecommender):
         item_seq_len = interaction[self.ITEM_SEQ_LEN]
 
         seq_output = self.forward(item_seq, item_seq_len)
-        seq_output = self._apply_fusion(seq_output, interaction)
 
         test_items_emb = self.item_embedding.weight
         scores = torch.matmul(seq_output, test_items_emb.transpose(0, 1))
         return scores
-
-    # ================== Phased Training Methods ==================
-
-    def set_training_phase(self, phase):
-        """
-        Set the current training phase and configure layer freezing.
-
-        Phase 1: Vanilla Mamba training (no fusion, all trainable)
-        Phase 2: LLM alignment (freeze Mamba, train fusion + projection)
-        Phase 3: Joint fine-tuning (unfreeze top Mamba layer)
-
-        Args:
-            phase: Training phase (1, 2, or 3)
-        """
-        self._current_phase = phase
-
-        if phase == 1:
-            # All parameters trainable, no fusion
-            self._unfreeze_all()
-        elif phase == 2:
-            # Freeze Mamba components, train fusion
-            self._freeze_for_phase2()
-        elif phase == 3:
-            # Unfreeze top Mamba layer for fine-tuning
-            self._configure_phase3()
-        else:
-            raise ValueError(f"Invalid phase: {phase}. Must be 1, 2, or 3.")
-
-    def _unfreeze_all(self):
-        """Unfreeze all parameters."""
-        for param in self.parameters():
-            param.requires_grad = True
-
-    def _freeze_for_phase2(self):
-        """Freeze Mamba components for Phase 2 training."""
-        # Freeze item embeddings
-        self.item_embedding.weight.requires_grad = False
-
-        # Freeze Mamba layers
-        for layer in self.mamba_layers:
-            for param in layer.parameters():
-                param.requires_grad = False
-
-        # Freeze LayerNorm
-        for param in self.LayerNorm.parameters():
-            param.requires_grad = False
-
-        # Keep fusion and projection trainable
-        if self.fusion is not None:
-            for param in self.fusion.parameters():
-                param.requires_grad = True
-
-        if self.llm_projection is not None:
-            for param in self.llm_projection.parameters():
-                param.requires_grad = True
-
-    def _configure_phase3(self):
-        """Configure for Phase 3 fine-tuning."""
-        # Start from Phase 2 configuration
-        self._freeze_for_phase2()
-
-        # Unfreeze only the top Mamba layer
-        if self.num_layers > 0:
-            for param in self.mamba_layers[-1].parameters():
-                param.requires_grad = True
 
     def get_trainable_params(self):
         """Get count of trainable parameters for logging."""
@@ -441,39 +263,6 @@ class Mamba4RecFusion(SequentialRecommender):
     def get_frozen_params(self):
         """Get count of frozen parameters for logging."""
         return sum(p.numel() for p in self.parameters() if not p.requires_grad)
-
-    # ================== Interpretability Methods ==================
-
-    def get_fusion_weights(self, interaction):
-        """
-        Get fusion gate values for interpretability.
-
-        Args:
-            interaction: RecBole interaction dict
-
-        Returns:
-            alpha: Gate values showing Mamba vs LLM trust
-        """
-        if not self.use_llm_fusion or self.fusion is None:
-            return None
-
-        item_seq = interaction[self.ITEM_SEQ]
-        item_seq_len = interaction[self.ITEM_SEQ_LEN]
-        seq_output = self.forward(item_seq, item_seq_len)
-
-        raw_mood_emb = interaction.get("LLM_MOOD_EMB", None)
-        raw_profile_emb = interaction.get("LLM_PROFILE_EMB", None)
-
-        m_current = None
-        p_profile = None
-
-        if raw_mood_emb is not None:
-            m_current = self.llm_projection(raw_mood_emb)
-
-        if raw_profile_emb is not None:
-            p_profile = self.llm_projection(raw_profile_emb)
-
-        return self.fusion.get_gate_value(seq_output, m_current, p_profile)
 
 
 class MambaLayer(nn.Module):
@@ -530,7 +319,3 @@ class FeedForward(nn.Module):
         hidden_states = self.LayerNorm(hidden_states + input_tensor)
 
         return hidden_states
-
-
-# Alias for backward compatibility
-Mamba4Rec = Mamba4RecFusion
