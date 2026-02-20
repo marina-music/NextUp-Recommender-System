@@ -129,11 +129,12 @@ class InMemoryProfileStore(BaseProfileStore):
     In-memory profile store for development and testing.
     """
 
-    def __init__(self, decay: float = 0.95, base_lr: float = 0.1):
+    def __init__(self, decay: float = 0.95, base_lr: float = 0.1, dim: int = 1024):
         self._store: Dict[int, ProfileEntry] = {}
         self._mood_history: Dict[int, List[tuple]] = {}  # user_id -> [(mood, feedback, time)]
         self.decay = decay
         self.base_lr = base_lr
+        self.dim = dim
 
     def get(self, user_id: int) -> Optional[ProfileEntry]:
         return self._store.get(user_id)
@@ -192,6 +193,39 @@ class InMemoryProfileStore(BaseProfileStore):
         if user_id not in self._mood_history:
             self._mood_history[user_id] = []
         self._mood_history[user_id].append((mood_vector.copy(), feedback_signal, current_time))
+
+    def update_with_rating(self, user_id: int, plot_embedding: np.ndarray, rating_weight: float):
+        """Update user profile from a plot embedding weighted by rating.
+
+        rating_weight = rating - 3 for 5-star scale (so 5->+2, 1->-2)
+        rating_weight = +1 for right swipe, -1 for left swipe
+        """
+        existing = self.get(user_id)
+        weighted = rating_weight * plot_embedding
+
+        if existing is None:
+            norm = np.linalg.norm(weighted)
+            vector = weighted / norm if norm > 0 else weighted
+            self.set(user_id, ProfileEntry(
+                vector=vector,
+                interaction_count=1,
+                last_updated=time.time(),
+                created_at=time.time(),
+                user_id=user_id,
+            ))
+        else:
+            lr = self.base_lr / (1 + 0.01 * existing.interaction_count)
+            new_vector = self.decay * existing.vector + lr * weighted
+            norm = np.linalg.norm(new_vector)
+            if norm > 0:
+                new_vector = new_vector / norm
+            self.set(user_id, ProfileEntry(
+                vector=new_vector,
+                interaction_count=existing.interaction_count + 1,
+                last_updated=time.time(),
+                created_at=existing.created_at,
+                user_id=user_id,
+            ))
 
     def get_mood_history(self, user_id: int, limit: int = 10) -> List[tuple]:
         """Get recent mood history for a user."""
@@ -268,7 +302,7 @@ class EmbeddingManager:
         self,
         mood_store: Optional[BaseMoodStore] = None,
         profile_store: Optional[BaseProfileStore] = None,
-        hidden_size: int = 64
+        hidden_size: int = 1024
     ):
         self.mood_store = mood_store or InMemoryMoodStore()
         self.profile_store = profile_store or InMemoryProfileStore()
