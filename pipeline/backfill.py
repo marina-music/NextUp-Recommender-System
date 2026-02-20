@@ -89,10 +89,10 @@ def resolve_imdb_to_wiki_titles(imdb_ids: list[str]) -> dict[str, str]:
     import requests
 
     result = {}
-    chunk_size = 2000
+    chunk_size = 200
     headers = {
         "Accept": "application/sparql-results+json",
-        "User-Agent": "Mamba4RecFusion/1.0 (research)",
+        "User-Agent": "Mamba4RecFusion/1.0 (research; polite)",
     }
 
     for i in tqdm(
@@ -109,7 +109,7 @@ def resolve_imdb_to_wiki_titles(imdb_ids: list[str]) -> dict[str, str]:
                    schema:name ?articleTitle .
         }}
         """
-        for attempt in range(3):
+        for attempt in range(5):
             try:
                 resp = requests.get(
                     WIKIDATA_SPARQL_URL,
@@ -117,14 +117,21 @@ def resolve_imdb_to_wiki_titles(imdb_ids: list[str]) -> dict[str, str]:
                     headers=headers,
                     timeout=120,
                 )
+                if resp.status_code == 429:
+                    wait = 30 * (attempt + 1)
+                    print(f"  Rate limited, waiting {wait}s...")
+                    time.sleep(wait)
+                    continue
                 resp.raise_for_status()
                 bindings = resp.json()["results"]["bindings"]
                 for b in bindings:
                     result[b["imdbId"]["value"]] = b["articleTitle"]["value"]
+                time.sleep(1)  # Be polite between chunks
                 break
             except Exception as exc:
-                if attempt < 2:
-                    time.sleep(10 * (attempt + 1))
+                if attempt < 4:
+                    wait = 10 * (attempt + 1)
+                    time.sleep(wait)
                 else:
                     print(f"  Failed chunk starting at {i}: {exc}")
 
