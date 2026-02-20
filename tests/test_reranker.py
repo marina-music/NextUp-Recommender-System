@@ -1,6 +1,5 @@
 """Tests for reranker module."""
 import pytest
-import numpy as np
 
 
 class TestScoreNormalization:

@@ -1,13 +1,11 @@
 """Integration test for the full dual-arm pipeline."""
-import pytest
 import numpy as np
 import faiss
 import polars as pl
 
 from content_tower import ContentTower
-from reranker import Reranker, compute_alpha
+from reranker import compute_alpha
 from inference import DualArmEngine
-from embedding_store import EmbeddingManager, InMemoryProfileStore
 from graduation import GraduationManager
 from llm_encoder import IntentParser
 from chat_provider import format_prompt

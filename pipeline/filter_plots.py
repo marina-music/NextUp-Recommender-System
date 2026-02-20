@@ -1,7 +1,6 @@
 """Filter wiki_plots_raw.parquet to movies/TV only via Wikidata SPARQL."""
 import json
 import time
-from pathlib import Path
 from typing import Set
 
 import polars as pl

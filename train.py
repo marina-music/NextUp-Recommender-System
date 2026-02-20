@@ -1,13 +1,9 @@
 """Single-phase Mamba4Rec training with retraining support."""
-import sys
-import os
 import argparse
 import logging
 from pathlib import Path
 
 import torch
-from torch.optim import Adam
-from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from recbole.config import Config
 from recbole.data import create_dataset, data_preparation

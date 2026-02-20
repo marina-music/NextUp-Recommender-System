@@ -76,8 +76,7 @@ def encode_and_build_index(
         title = row.get(title_col, "")
         genres = row.get("genres", None)
         year = row.get("year", None)
-        plot_source = row.get("plot_source", "")
-        media_type = "Film"  # Default; could detect from genres
+        media_type = "Film"
         if genres and "Animation" in str(genres):
             media_type = "Animated Film"
 

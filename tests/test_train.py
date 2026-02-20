@@ -1,6 +1,4 @@
 """Tests for single-phase training module."""
-import pytest
-from unittest.mock import MagicMock, patch
 
 
 class TestTrainModule:

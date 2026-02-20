@@ -1,5 +1,4 @@
 """Tests for pure Mamba4Rec (no fusion)."""
-import pytest
 import torch
 from unittest.mock import MagicMock
 

@@ -1,5 +1,4 @@
 """Tests for content tower."""
-import pytest
 import numpy as np
 import faiss
 import polars as pl

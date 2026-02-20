@@ -1,6 +1,4 @@
 """Tests for graduation manager."""
-import pytest
-import json
 import tempfile
 from pathlib import Path
 

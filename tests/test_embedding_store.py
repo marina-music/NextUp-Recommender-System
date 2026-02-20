@@ -1,7 +1,5 @@
 """Tests for updated embedding store with 1024-dim content profiles."""
-import pytest
 import numpy as np
-import torch
 
 
 class TestContentProfile:
@@ -28,7 +26,7 @@ class TestContentProfile:
         emb2[1] = 1.0
 
         store.update_with_rating(user_id=1, plot_embedding=emb1, rating_weight=1.0)
-        profile1 = store.get(1).vector.copy()
+        store.get(1).vector.copy()  # first profile state
 
         store.update_with_rating(user_id=1, plot_embedding=emb2, rating_weight=1.0)
         profile2 = store.get(1).vector
@@ -70,7 +68,7 @@ class TestEmbeddingManager:
         mgr = EmbeddingManager(hidden_size=1024)
 
         # Manually set a profile
-        from embedding_store import InMemoryProfileStore, ProfileEntry
+        from embedding_store import ProfileEntry
         import time
         mgr.profile_store.set(1, ProfileEntry(
             vector=np.random.randn(1024).astype(np.float32),

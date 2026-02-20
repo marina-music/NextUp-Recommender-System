@@ -4,8 +4,7 @@ Uses BAAI/bge-large-en-v1.5 (1024-dim) for both plot encoding
 and query encoding — must be the same model/space.
 """
 import hashlib
-from functools import lru_cache
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import torch
 

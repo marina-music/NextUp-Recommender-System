@@ -1,9 +1,8 @@
 """Tests for dual-arm inference engine."""
-import pytest
 import numpy as np
 import faiss
 import polars as pl
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 def _mock_content_tower(n=50, dim=1024):

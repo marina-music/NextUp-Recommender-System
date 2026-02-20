@@ -3,7 +3,7 @@
 Orchestrates Mamba (behavioral) and Content Tower (semantic) arms,
 computes alpha, calls the reranker, handles single and group recommendations.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 import numpy as np
@@ -12,7 +12,7 @@ import torch
 from content_tower import ContentTower
 from embedding_store import EmbeddingManager
 from llm_encoder import IntentParser, LLMEncoder
-from reranker import Reranker, compute_alpha, min_max_normalize
+from reranker import Reranker, compute_alpha
 
 
 @dataclass
@@ -77,12 +77,9 @@ class DualArmEngine:
         Returns:
             List of recommendation dicts with movie_id, score, etc.
         """
-        parsed_intent = None
-
         # Encode query if text provided
         if query_text and query_embedding is None:
             query_embedding = self.encoder.encode_query(query_text).cpu().numpy()
-            parsed_intent = self.intent_parser.parse(query_text)
 
         # Get profile if user_id provided
         if user_id is not None and profile_embedding is None:
@@ -126,14 +123,7 @@ class DualArmEngine:
             content_scores = {k: v for k, v in content_scores.items() if k not in history_set}
             mamba_scores = {k: v for k, v in mamba_scores.items() if k not in history_set}
 
-        # Determine mode
-        if content_scores and mamba_scores:
-            mode = "dual"
-        elif content_scores:
-            mode = "content_only"
-        elif mamba_scores:
-            mode = "mamba_only"
-        else:
+        if not content_scores and not mamba_scores:
             return []
 
         # Rerank
@@ -168,7 +158,6 @@ class DualArmEngine:
         all_candidates = set()
 
         for user in users:
-            user_id = user.get("user_id")
             history = user.get("item_history", [])
             profile = user.get("profile_embedding")
 

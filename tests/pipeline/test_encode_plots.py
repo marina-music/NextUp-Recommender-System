@@ -1,5 +1,4 @@
 """Tests for plot encoding and FAISS index building."""
-import pytest
 import numpy as np
 
 
@@ -23,7 +22,6 @@ class TestPrependMetadata:
 class TestBuildFaissIndex:
     def test_build_index_shape(self):
         from pipeline.encode_plots import build_faiss_index
-        import faiss
         embeddings = np.random.randn(10, 1024).astype(np.float32)
         index = build_faiss_index(embeddings)
         assert index.ntotal == 10

@@ -1,5 +1,4 @@
 """Tests for Wikidata movie/TV filtering."""
-import pytest
 import polars as pl
 
 

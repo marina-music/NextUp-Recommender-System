@@ -1,5 +1,4 @@
 """Tests for BGE encoder."""
-import pytest
 
 
 class TestLLMEncoder:
