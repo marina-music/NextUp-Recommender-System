@@ -28,7 +28,14 @@ data = [
     "mwxml>=0.3.3",
     "mwparserfromhell>=0.6.5",
     "aiohttp>=3.9.0",
+    "requests>=2.28.0",
     "tqdm>=4.65.0",
+]
+# LLM chat providers for mood extraction
+chat = [
+    "openai>=1.0.0",
+    "anthropic>=0.18.0",
+    "google-generativeai>=0.3.0",
 ]
 
 [tool.uv]
