@@ -1,110 +1,73 @@
-# Mamba4Rec Fusion Configuration
-# Copy this file to config.yaml and modify as needed
+# =============================================================================
+# Fusion Dual-Arm Configuration
+# Copy this file to config_ml32m.yaml and modify as needed.
+# =============================================================================
 
 # =============================================================================
-# Dataset Configuration
+# Mamba (behavioral arm)
+# The sequential recommender that learns from user interaction histories.
 # =============================================================================
-data_path: ./data/
-dataset: ml-1m  # MovieLens 1M, or your custom dataset name
-
-# Data loading
-USER_ID_FIELD: user_id
-ITEM_ID_FIELD: item_id
-TIME_FIELD: timestamp
-load_col:
-  inter: [user_id, item_id, timestamp]
-
-# Sequence settings
-MAX_ITEM_LIST_LENGTH: 50  # Maximum sequence length
-
-# =============================================================================
-# Model Configuration
-# =============================================================================
-model: Mamba4RecFusion
-
-# Mamba architecture
-hidden_size: 64           # Hidden dimension (d_model for Mamba)
-num_layers: 2             # Number of Mamba layers
-inner_size: 256           # FFN inner dimension (4x hidden_size recommended)
-
-# LLM fusion settings
-llm_dim: 768              # Sentence transformer output dimension
-use_llm_fusion: false     # Enable in Phase 2+ (false for Phase 1)
-fusion_dropout: 0.1       # Dropout in fusion layers
-
-# Mamba-specific (when using mamba-ssm)
-d_state: 16               # State dimension
-d_conv: 4                 # Convolution width
-expand: 2                 # Expansion factor
-
-# Loss function
-loss_type: BPR            # BPR (pairwise) or CE (cross-entropy)
+dataset: ml-32m                    # Dataset name (e.g., ml-32m, ml-1m)
+hidden_size: 64                    # Number of features in the hidden state
+num_layers: 1                      # Number of Mamba layers
+dropout_prob: 0.2                  # Dropout rate
+d_state: 32                        # SSM state expansion factor
+d_conv: 4                          # Local convolution width
+expand: 2                          # Block expansion factor
+loss_type: CE                      # Loss function: 'BPR' (pairwise) or 'CE' (cross-entropy)
+epochs: 20                         # Maximum training epochs
+train_batch_size: 2048             # Training batch size
+learning_rate: 0.001               # Learning rate for Adam optimizer
+stopping_step: 5                   # Early stopping patience (epochs without improvement)
+MAX_ITEM_LIST_LENGTH: 50           # Maximum sequence length per user
+eval_batch_size: 1024              # Evaluation batch size
+metrics: ['Hit', 'NDCG', 'MRR']   # Evaluation metrics
+valid_metric: 'NDCG@10'           # Metric used for early stopping / model selection
+rating_threshold: 3.5              # Minimum rating to consider as positive feedback
 
 # =============================================================================
-# Training Configuration - Phase 1 (Vanilla Mamba)
+# Content tower
+# Encodes item plots/descriptions into dense vectors for semantic retrieval.
 # =============================================================================
-epochs: 100
-learning_rate: 0.001
-train_batch_size: 256
-eval_batch_size: 512
-
-# Optimizer
-weight_decay: 0.0
-adam_beta1: 0.9
-adam_beta2: 0.999
-
-# Learning rate scheduler
-learning_rate_scheduler: null  # or 'cosine', 'linear'
-# warmup_steps: 1000
+embedding_model: BAAI/bge-large-en-v1.5   # HuggingFace model for text embeddings
+embedding_dim: 1024                        # Output dimension of the embedding model
+faiss_index_path: data/plots.faiss         # Path to the FAISS index of plot embeddings
+plots_metadata_path: data/plots_metadata.parquet  # Path to plot metadata (titles, IMDb IDs, etc.)
 
 # =============================================================================
-# Training Configuration - Phase 2 (Fusion Alignment)
+# Reranker
+# Blends Mamba scores with content-tower similarity to produce final rankings.
 # =============================================================================
-phase2_epochs: 50
-phase2_learning_rate: 0.0005
-# Note: Mamba layers are frozen during this phase
+alpha_mode: implicit               # 'fixed' for constant alpha, 'implicit' for learned/adaptive
+alpha_fixed: 0.5                   # Weight given to content arm when alpha_mode is 'fixed'
+alpha_min: 0.3                     # Lower bound for adaptive alpha
+alpha_max: 0.9                     # Upper bound for adaptive alpha
+home_feed_alpha: 0.2               # Content weight for the home/explore feed
+group_fairness_lambda: 0.5         # Regularization for group-level fairness in reranking
 
 # =============================================================================
-# Training Configuration - Phase 3 (Joint Fine-tuning)
+# Graduation
+# Controls when cold-start users "graduate" into the behavioral arm and
+# triggers model retraining.
 # =============================================================================
-phase3_epochs: 30
-phase3_learning_rate: 0.0001
-ewc_lambda: 0.4           # EWC regularization strength (higher = more stable)
+graduation_threshold: 50           # Number of interactions before a user graduates
+retrain_trigger: all               # What triggers retraining: 'all', 'graduation', 'schedule'
+retrain_schedule: weekly           # Retraining cadence when schedule-based
+retrain_on_graduation_count: 100   # Retrain after this many users graduate
+retraining_queue_path: data/retraining_queue.json  # Queue file for pending retraining jobs
 
 # =============================================================================
-# Evaluation Configuration
+# Chatbot
+# LLM-powered conversational interface for preference elicitation.
 # =============================================================================
-eval_args:
-  split:
-    LS: valid_and_test
-  order: TO               # Temporal order
-  group_by: user
-  mode: full              # or 'uni100', 'pop100'
-
-metrics: [Recall, NDCG, MRR, Hit]
-topk: [5, 10, 20]
-valid_metric: NDCG@10
+chat_provider: openai              # LLM provider: 'openai', 'anthropic', etc.
+chat_model: gpt-4o                 # Model name for the chat provider
 
 # =============================================================================
-# Device and Performance
+# User profiles
+# Online user-preference vectors that decay over time and adapt to mood.
 # =============================================================================
-device: cuda              # cuda or cpu
-use_gpu: true
-gpu_id: 0
-
-# Reproducibility
-seed: 42
-reproducibility: true
-
-# =============================================================================
-# Checkpointing
-# =============================================================================
-checkpoint_dir: ./checkpoints/
-save_step: 10             # Save checkpoint every N epochs
-# early_stopping: 10      # Stop if no improvement for N epochs
-
-# =============================================================================
-# Logging
-# =============================================================================
-log_level: INFO
-show_progress: true
+profile_decay: 0.95                # Exponential decay factor for historical preferences
+profile_learning_rate: 0.1         # Step size for online profile updates
+profile_dim: 1024                  # Dimension of the user profile vector
+mood_ttl: 1800                     # Time-to-live (seconds) for mood-based adjustments

@@ -1,0 +1,49 @@
+# Mamba (behavioral arm)
+dataset: ml-32m
+hidden_size: 64
+num_layers: 1
+dropout_prob: 0.2
+d_state: 32
+d_conv: 4
+expand: 2
+loss_type: CE
+epochs: 20
+train_batch_size: 2048
+learning_rate: 0.001
+stopping_step: 5
+MAX_ITEM_LIST_LENGTH: 50
+eval_batch_size: 1024
+metrics: ['Hit', 'NDCG', 'MRR']
+valid_metric: 'NDCG@10'
+rating_threshold: 3.5
+
+# Content tower
+embedding_model: BAAI/bge-large-en-v1.5
+embedding_dim: 1024
+faiss_index_path: data/plots.faiss
+plots_metadata_path: data/plots_metadata.parquet
+
+# Reranker
+alpha_mode: implicit
+alpha_fixed: 0.5
+alpha_min: 0.3
+alpha_max: 0.9
+home_feed_alpha: 0.2
+group_fairness_lambda: 0.5
+
+# Graduation
+graduation_threshold: 50
+retrain_trigger: all
+retrain_schedule: weekly
+retrain_on_graduation_count: 100
+retraining_queue_path: data/retraining_queue.json
+
+# Chatbot
+chat_provider: openai
+chat_model: gpt-4o
+
+# User profiles
+profile_decay: 0.95
+profile_learning_rate: 0.1
+profile_dim: 1024
+mood_ttl: 1800
