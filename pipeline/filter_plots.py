@@ -12,17 +12,17 @@ WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
 
 # Instance-of types for movies and TV
 SPARQL_QUERY = """
-SELECT DISTINCT ?articleTitle WHERE {{
+SELECT DISTINCT ?articleTitle WHERE {
   ?article schema:isPartOf <https://en.wikipedia.org/> ;
            schema:name ?articleTitle ;
            schema:about ?item .
   ?item wdt:P31 ?instance .
-  VALUES ?instance {{
+  VALUES ?instance {
     wd:Q11424      wd:Q24856      wd:Q5398426
     wd:Q21191270   wd:Q24862      wd:Q506240
     wd:Q1261214    wd:Q63952888   wd:Q220898
-  }}
-}}
+  }
+}
 """
 
 

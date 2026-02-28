@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: CineMatch External Recommender API
+  description: |
+    Contract for the external in-house ML movie recommender service.
+    CineMatch acts as the client; the ML service implements this spec.
+  version: 1.0.0
+
+servers:
+  - url: "{base_url}"
+    description: External ML recommender
+    variables:
+      base_url:
+        default: http://localhost:9000
+
+paths:
+  /recommend:
+    post:
+      operationId: recommend
+      summary: Get personalized movie recommendations
+      security:
+        - basicAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecommendRequest'
+      responses:
+        '200':
+          description: Successful recommendations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized — missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Insufficient data for recommendations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+
+  schemas:
+    RecommendRequest:
+      type: object
+      required: [user_id, limit]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        query:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+          default: 20
+        region:
+          type: string
+          default: US
+        profile:
+          $ref: '#/components/schemas/UserProfile'
+        interaction_history:
+          $ref: '#/components/schemas/InteractionHistory'
+
+    UserProfile:
+      type: object
+      properties:
+        preferred_genres:
+          type: array
+          items: { type: string }
+        preferred_services:
+          type: array
+          items: { type: string }
+        disliked_genres:
+          type: array
+          items: { type: string }
+        description:
+          type: string
+          nullable: true
+        traits:
+          type: array
+          items: { type: string }
+        recommendation_focus:
+          type: object
+
+    InteractionHistory:
+      type: object
+      properties:
+        recent_events:
+          type: array
+          items:
+            type: object
+            properties:
+              event_type: { type: string }
+              content_ref: { type: string }
+              imdb_id: { type: string }
+              timestamp: { type: string, format: date-time }
+        watched:
+          type: array
+          items: { type: string }
+          description: IMDB IDs of watched movies
+        watchlist:
+          type: array
+          items: { type: string }
+          description: Content refs in watchlist
+        exclude:
+          type: array
+          items: { type: string }
+          description: IMDB IDs to exclude from results
+
+    RecommendResponse:
+      type: object
+      required: [recommendations, response_message]
+      properties:
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recommendation'
+        response_message:
+          type: string
+        usage:
+          $ref: '#/components/schemas/UsageReport'
+
+    Recommendation:
+      type: object
+      required: [imdb_id, title, year]
+      properties:
+        imdb_id:
+          type: string
+          pattern: '^tt\d+$'
+        title:
+          type: string
+        year:
+          type: string
+        why_recommended:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    UsageReport:
+      type: object
+      description: Optional — report if the ML service used an LLM internally
+      properties:
+        provider: { type: string }
+        model: { type: string }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        cost_usd: { type: number }
+        latency_ms: { type: integer }
+
+    ErrorResponse:
+      type: object
+      required: [error, code]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum: [INVALID_REQUEST, UNAUTHORIZED, INSUFFICIENT_DATA, TIMEOUT, SERVICE_UNAVAILABLE]
