@@ -1,31 +1,99 @@
 # NextUp Recommender System
 
-A mood-aware recommendation system that fuses sequential behavior modeling (Mamba4Rec) with LLM-derived signals for personalized recommendations.
+A next-generation movie recommendation system that puts users back in the driver's seat. By combining cutting-edge sequential modeling with intelligent content understanding, NextUp solves the cold-start problem while delivering personalized, mood-aware recommendations through natural language interaction.
+
+## The Problem
+
+Traditional recommendation systems face two critical challenges:
+1. **Cold-start problem**: New movies can't be recommended until users interact with them
+2. **Loss of user agency**: Users are passive recipients of algorithmic predictions rather than active participants
+
+NextUp addresses both through a novel dual-arm architecture that blends behavioral signals with semantic content understanding.
 
 ## Overview
 
-This is an extended version of [Mamba4Rec](https://github.com/chengkai-liu/Mamba4Rec) that integrates LLM-based mood and intent signals for enhanced personalization.
+NextUp implements a **dual-arm recommendation architecture** that intelligently combines two complementary approaches:
 
-The fusion architecture combines:
-- **Mamba4Rec**: Sequential recommendation via Selective State Space Models
-- **LLM Encoder**: Sentence transformer for mood/intent understanding
-- **Gated Fusion**: Adaptive blending of sequential history and current mood
+### Behavioral Arm (Mamba4Rec)
+Learns from user interaction histories using **Mamba4Rec**, a cutting-edge sequential recommendation model based on Selective State Space Models (SSMs). Unlike Transformer-based approaches that suffer from quadratic computational complexity, Mamba4Rec efficiently handles long user behavior sequences with linear complexity—making it ideal for real-world production systems.
 
-### Key Features
+> **Why Mamba4Rec?** Published in March 2024 and awarded Best Paper at RelKD@KDD 2024, Mamba4Rec is the first work to apply selective SSMs to sequential recommendation. It defeats both RNN and attention-based models in effectiveness AND efficiency, especially for long interaction sequences.
 
-- Three-phase training for stable learning without catastrophic forgetting
-- Multiple fusion architectures (gated, attention-based, temporal)
-- Intent parsing from natural language (mood, genre, era, constraints)
-- Pluggable embedding storage (in-memory for dev, Redis for production)
-- Batch inference support for offline processing
+### Content Arm (Semantic Search)
+Uses **BAAI/bge-large-en-v1.5** embeddings and FAISS vector indexing over **190,000+ Wikipedia movie plots** to enable semantic search based on user queries like "something cozy and nostalgic from the early 2000s."
+
+### Intelligent Blending Layer
+A reranker dynamically blends behavioral and content signals based on query specificity:
+- Specific mood/genre queries → Higher weight on content arm
+- General browsing → Higher weight on behavioral arm
+- Cold-start items → Surfaced through content arm, graduated into behavioral catalog
+
+## Key Features
+
+### 🎯 User-Driven Recommendations
+Natural language queries for mood, genre, era, and constraints put users in control rather than forcing them to passively consume algorithmic suggestions.
+
+### ❄️ Cold-Start Solution
+New movies are immediately recommendable through semantic plot similarity, then "graduate" into the behavioral model's catalog as users interact with them.
+
+### 👥 Group-Watch Blending
+Intelligently merges multiple user profiles for shared viewing experiences—perfect for couples, families, or watch parties.
+
+### ⚡ Production-Ready Design
+- RESTful API architecture for frontend integration
+- Efficient data pipelines for plot extraction and encoding
+- Scalable vector storage (in-memory for dev, Redis/PostgreSQL for production)
+- Modular design supporting pluggable embedding stores
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     NextUp Recommendation System             │
+└─────────────────────────────────────────────────────────────┘
+
+User Query: "I want something cozy from the 90s"
+         │
+         ├──────────────────┬──────────────────┐
+         │                  │                  │
+         v                  v                  v
+┌────────────────┐  ┌────────────────┐  ┌────────────────┐
+│ Intent Parser  │  │ Behavioral Arm │  │  Content Arm   │
+│                │  │                │  │                │
+│ Extract mood,  │  │  Mamba4Rec     │  │ BGE Embeddings │
+│ genre, era     │  │  Sequential    │  │ 190K+ plots    │
+│                │  │  Model         │  │ FAISS Index    │
+└────────────────┘  └────────────────┘  └────────────────┘
+         │                  │                  │
+         │                  v                  v
+         │          ┌───────────────────────────────┐
+         └────────> │   Adaptive Reranker (α)       │
+                    │                               │
+                    │ Blends scores based on:       │
+                    │ - Query specificity           │
+                    │ - Item cold-start status      │
+                    │ - User history depth          │
+                    └───────────────────────────────┘
+                                 │
+                                 v
+                    ┌────────────────────────┐
+                    │ Top-K Recommendations  │
+                    └────────────────────────┘
+```
+
+## Dataset & Scale
+
+- **Behavioral Training**: MovieLens-32M (32 million ratings, 162,000 movies)
+- **Content Search**: 190,000+ Wikipedia movie/TV plot summaries encoded with BGE-large embeddings
+- **Data Pipeline**: Automated Wikidata SPARQL filtering → Wikipedia plot extraction → BGE encoding with caching
 
 ## Installation
 
-### Using Conda (recommended)
+### Using Conda (Recommended)
 
 ```bash
 conda env create -f environment.yaml
-conda activate mamba4rec-fusion
+conda activate nextup-recommender-system
 ```
 
 ### Using UV
@@ -42,144 +110,126 @@ pip install -e .
 # For GPU support (Linux only)
 pip install -e ".[gpu]"
 
-# For production Redis storage
+# For data pipeline
+pip install -e ".[data]"
+
+# For production storage backends
 pip install -e ".[redis]"
 ```
 
 ## Quick Start
 
-### 1. Prepare Your Dataset
-
-Place your dataset in RecBole format under `./data/your_dataset/`:
-- `your_dataset.inter` - User-item interactions (user_id, item_id, timestamp)
-- `your_dataset.item` - Item features (optional)
-- `your_dataset.user` - User features (optional)
-
-The default config uses MovieLens-1M (`ml-1m`).
-
-### 2. Train the Model
-
-**Phased Training (Recommended)**
+### 1. Train the Behavioral Arm
 
 ```bash
-# Phase 1: Train vanilla Mamba4Rec
-python train_phases.py --phase 1 --config config.yaml --save_dir ./checkpoints
-
-# Phase 2: Train fusion layers (Mamba frozen)
-python train_phases.py --phase 2 --config config.yaml \
-  --checkpoint ./checkpoints/mamba_phase1.pt --save_dir ./checkpoints
-
-# Phase 3: Joint fine-tuning with EWC
-python train_phases.py --phase 3 --config config.yaml \
-  --checkpoint ./checkpoints/mamba_phase2.pt --save_dir ./checkpoints
+python train.py --config config_ml32m.yaml --save_dir ./checkpoints
 ```
 
-**Quick Training (Single Pass)**
+### 2. Build the Content Index
 
 ```bash
-python run.py                # Vanilla Mamba4Rec
-python run.py --fusion       # With fusion enabled
+# Run the data pipeline to extract and encode plots
+python pipeline/run_pipeline.py --output ./data/plots.parquet
+
+# Build FAISS index
+python -c "from content_tower import ContentTower; tower = ContentTower(); tower.build_index()"
 ```
 
-### 3. Run Inference
+### 3. Serve Recommendations (API)
 
 ```python
 from inference import RecommendationEngine
 
-# Load trained model
-engine = RecommendationEngine.load("./checkpoints/mamba_production.pt")
+engine = RecommendationEngine.load("./checkpoints/mamba_trained.pt")
 
-# Get recommendations
+# Single user recommendation
 result = engine.recommend(
-    user_id=123,
-    session_id="session-abc",
-    item_history=[101, 205, 312, 89],
-    mood_text="I want something cozy and nostalgic from the 90s",
+    user_id=12345,
+    query="I want something cozy and nostalgic from the 90s",
     top_k=10
 )
 
-# Explain the recommendation
-print(engine.explain_recommendation(result))
+# Group-watch blending
+result = engine.recommend_group(
+    user_ids=[12345, 67890],
+    query="family-friendly comedy",
+    top_k=10
+)
 ```
 
-## Architecture
+## Project Status
 
-```
-User Message --> LLM Encoder --> LLMProjection --> m_current
-                                                       |
-                                                       v
-User History --> Mamba Layers --> seq_output --> [PreferenceFusion] --> Recommendations
-                                                       ^
-User Profile ----------------------------------------> p_profile
-```
+🚧 **In Active Development** 🚧
 
-## Training Phases
+This project is currently under development as part of a research initiative to push the boundaries of recommendation system design. Core components implemented:
 
-### Phase 1: Vanilla Mamba4Rec
-- Trains the sequential model without fusion
-- Establishes stable item geometry in embedding space
-- Uses full learning rate (0.001)
+- ✅ Mamba4Rec behavioral model (stripped fusion, pure sequential)
+- ✅ Wikipedia plot extraction pipeline (190K+ encoded)
+- ✅ BGE-based content tower with FAISS indexing
+- ✅ Intent parsing for mood/genre/era extraction
+- ✅ Reranker with adaptive blending
+- 🚧 API integration layer (in progress)
+- 🚧 Group-watch blending (in progress)
+- 🚧 Graduation mechanism (cold-start → behavioral catalog)
+- 🚧 End-to-end evaluation and benchmarking
 
-### Phase 2: Fusion Alignment
-- Freezes Mamba layers and item embeddings
-- Trains LLM projection and fusion layers
-- Aligns LLM embeddings to item space
-- Lower learning rate (0.0005)
+## Technical Highlights
 
-### Phase 3: Joint Fine-tuning
-- Unfreezes top Mamba layer
-- Uses EWC regularization to prevent forgetting
-- Very low learning rate (0.0001)
+### Why Dual-Arm Architecture?
+
+Traditional single-model approaches force a tradeoff:
+- **Collaborative filtering alone**: Can't recommend new items (cold-start)
+- **Content-based alone**: Ignores personalization and user behavior patterns
+
+The dual-arm approach gets the best of both worlds through intelligent blending.
+
+### Why Mamba over Transformers?
+
+| Model Type | Complexity | Long Sequences | Production Ready |
+|------------|------------|----------------|------------------|
+| Transformer | O(n²) | Struggles with 100+ items | High memory cost |
+| Mamba4Rec | O(n) | Handles 1000+ items efficiently | Production viable |
+
+For users with long interaction histories (power users, binge-watchers), this efficiency difference is critical.
+
+### Adaptive Blending (α Parameter)
+
+The reranker computes a dynamic blending weight α ∈ [0,1]:
+- High specificity query ("cyberpunk thriller from 2019") → α → 0.8 (favor content)
+- General query ("something good") → α → 0.3 (favor behavioral)
+- Cold-start item → Boosted through content arm, flagged for graduation
 
 ## Project Structure
 
 ```
-fusion/
-├── mamba4rec.py        # Core model with Mamba layers and fusion
-├── fusion.py           # Fusion mechanisms (gated, attention, temporal)
-├── llm_encoder.py      # Text encoding and intent parsing
-├── llm_projection.py   # Projects LLM embeddings to Mamba space
-├── embedding_store.py  # Storage backends for mood/profile vectors
-├── train_phases.py     # Three-phase training orchestrator
-├── inference.py        # Inference API and batch processing
-├── run.py              # Quick training runner
-├── config.yaml         # Model and training configuration
-└── environment.yaml    # Conda environment specification
+nextup-recommender-system/
+├── mamba4rec.py           # Core Mamba sequential model
+├── content_tower.py       # BGE embedding + FAISS search
+├── reranker.py            # Adaptive blending logic
+├── llm_encoder.py         # Intent parsing from natural language
+├── embedding_store.py     # Pluggable storage (in-memory/Redis)
+├── inference.py           # Recommendation API orchestrator
+├── train.py               # Single-phase Mamba training
+├── graduation.py          # Cold-start → behavioral catalog promotion
+├── chat_provider.py       # LLM chat providers for conversational interface
+├── pipeline/              # Data pipeline for plot extraction
+│   ├── download.py        # Wikipedia dump downloader
+│   ├── extract_plots.py   # Plot text extraction
+│   ├── filter_plots.py    # Wikidata SPARQL filtering (movies/TV only)
+│   ├── encode_plots.py    # BGE encoding with caching
+│   └── join_movielens.py  # Bridge MovieLens IDs to Wikipedia
+└── tests/                 # Comprehensive test suite
 ```
-
-## Configuration
-
-See `config.yaml` for all options. Key parameters:
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `hidden_size` | 64 | Mamba hidden dimension |
-| `num_layers` | 1 | Number of Mamba layers |
-| `llm_dim` | 768 | LLM embedding dimension |
-| `use_llm_fusion` | true | Enable LLM fusion |
-| `vector_gate` | true | Per-dimension gating |
-| `fusion_dropout` | 0.1 | Dropout in fusion layers |
-| `loss_type` | CE | Loss function (BPR or CE) |
-| `ewc_lambda` | 0.4 | EWC regularization strength |
-
-## Supported Intents
-
-The intent parser recognizes:
-
-- **Moods**: cozy, exciting, scary, funny, sad, romantic, thoughtful, relaxing
-- **Genres**: action, comedy, drama, horror, scifi, fantasy, thriller, romance, documentary, animation
-- **Eras**: classic, 80s, 90s, 2000s, 2010s, recent
-- **Constraints**: duration limits, family-friendly, mature content
 
 ## Development
 
 ### Running Tests
 
 ```bash
-pytest
+pytest tests/ -v
 ```
 
-### Linting
+### Code Quality
 
 ```bash
 ruff check .
@@ -188,24 +238,42 @@ ruff format .
 
 ## Requirements
 
-- Python 3.8+ (3.11 recommended for UV)
+- Python 3.10+ (3.11 recommended)
 - PyTorch >= 2.0.0
-- RecBole >= 1.2.0
+- RecBole >= 1.1.1
 - sentence-transformers >= 2.2.0
-- mamba-ssm >= 1.1.4 (Linux + CUDA only)
-- causal-conv1d >= 1.2.0 (Linux + CUDA only)
+- faiss-cpu >= 1.7.0
+- mamba-ssm >= 1.0.0 (Linux + CUDA only, optional)
+
+## Roadmap
+
+- [ ] Complete API integration layer
+- [ ] Implement group-watch profile blending
+- [ ] Build graduation mechanism (content → behavioral)
+- [ ] End-to-end evaluation on MovieLens-32M
+- [ ] Benchmark against Transformer baselines
+- [ ] Deploy demo application
+- [ ] Production-ready deployment guide
 
 ## Citation
 
+This project builds upon Mamba4Rec:
+
 ```bibtex
 @article{liu2024mamba4rec,
-  title={Mamba4rec: Towards efficient sequential recommendation with selective state space models},
+  title={Mamba4Rec: Towards Efficient Sequential Recommendation with Selective State Space Models},
   author={Liu, Chengkai and Lin, Jianghao and Wang, Jianling and Liu, Hanzhou and Caverlee, James},
   journal={arXiv preprint arXiv:2403.03900},
   year={2024}
 }
 ```
 
-## License
+## Acknowledgments
 
-[Add your license here]
+- [Mamba4Rec](https://github.com/chengkai-liu/Mamba4Rec) for the sequential recommendation foundation
+- [RecBole](https://recbole.io/) for the recommendation framework
+- [BAAI](https://huggingface.co/BAAI) for the BGE embedding models
+
+---
+
+**Note**: This is a research and development project. Code and documentation are actively evolving. Contributions and feedback welcome!
