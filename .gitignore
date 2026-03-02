@@ -23,6 +23,7 @@ saved/
 checkpoints/
 log/
 log_tensorboard/
+*.log
 
 # Data pipeline
 data/raw/

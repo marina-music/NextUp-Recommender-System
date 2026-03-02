@@ -1,4 +1,4 @@
-name: mamba4rec-fusion
+name: nextup-recommender-system
 channels:
   - defaults
 dependencies:

@@ -1,4 +1,4 @@
-# Mamba4Rec Fusion
+# NextUp Recommender System
 
 A mood-aware recommendation system that fuses sequential behavior modeling (Mamba4Rec) with LLM-derived signals for personalized recommendations.
 

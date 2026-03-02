@@ -1,7 +1,7 @@
 [project]
-name = "fusion"
+name = "nextup-recommender-system"
 version = "0.1.0"
-description = "Mamba4Rec with LLM Fusion for mood-aware recommendations"
+description = "NextUp: A hybrid movie recommender system combining sequential modelling with a mood and content aware, user-driven semantic search"
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
 dependencies = [
