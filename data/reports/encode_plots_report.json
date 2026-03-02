@@ -1,7 +1,0 @@
-{
-  "total_encoded": 86405,
-  "embedding_dim": 1024,
-  "model": "BAAI/bge-large-en-v1.5",
-  "index_path": "data/plots.faiss",
-  "metadata_path": "data/plots_metadata.parquet"
-}

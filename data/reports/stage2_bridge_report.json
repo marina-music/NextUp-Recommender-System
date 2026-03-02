@@ -1,8 +1,0 @@
-{
-  "total_wikiplots_extracted": 192837,
-  "wikiplots_with_wikidata_match": 136851,
-  "wikidata_match_rate": "71.0%",
-  "total_movielens_movies": 87585,
-  "wikiplots_in_movielens": 50452,
-  "movielens_match_rate": "57.6%"
-}

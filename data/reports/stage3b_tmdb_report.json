@@ -1,8 +1,0 @@
-{
-  "total_fetched": 35214,
-  "total_failed": 1053,
-  "failure_breakdown": {
-    "not_found": 813,
-    "empty_overview": 240
-  }
-}
