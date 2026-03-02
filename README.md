@@ -30,16 +30,16 @@ A reranker dynamically blends behavioral and content signals based on query spec
 
 ## Key Features
 
-### 🎯 User-Driven Recommendations
+### User-Driven Recommendations
 Natural language queries for mood, genre, era, and constraints put users in control rather than forcing them to passively consume algorithmic suggestions.
 
-### ❄️ Cold-Start Solution
+### Cold-Start Solution
 New movies are immediately recommendable through semantic plot similarity, then "graduate" into the behavioral model's catalog as users interact with them.
 
-### 👥 Group-Watch Blending
+### Group-Watch Blending
 Intelligently merges multiple user profiles for shared viewing experiences—perfect for couples, families, or watch parties.
 
-### ⚡ Production-Ready Design
+### Production-Ready Design
 - RESTful API architecture for frontend integration
 - Efficient data pipelines for plot extraction and encoding
 - Scalable vector storage (in-memory for dev, Redis/PostgreSQL for production)
@@ -159,19 +159,19 @@ result = engine.recommend_group(
 
 ## Project Status
 
-🚧 **In Active Development** 🚧
+**In Active Development**
 
 This project is currently under development as part of a research initiative to push the boundaries of recommendation system design. Core components implemented:
 
-- ✅ Mamba4Rec behavioral model (stripped fusion, pure sequential)
-- ✅ Wikipedia plot extraction pipeline (190K+ encoded)
-- ✅ BGE-based content tower with FAISS indexing
-- ✅ Intent parsing for mood/genre/era extraction
-- ✅ Reranker with adaptive blending
-- 🚧 API integration layer (in progress)
-- 🚧 Group-watch blending (in progress)
-- 🚧 Graduation mechanism (cold-start → behavioral catalog)
-- 🚧 End-to-end evaluation and benchmarking
+- [x] Mamba4Rec behavioral model (stripped fusion, pure sequential)
+- [x] Wikipedia plot extraction pipeline (190K+ encoded)
+- [x] BGE-based content tower with FAISS indexing
+- [x] Intent parsing for mood/genre/era extraction
+- [x] Reranker with adaptive blending
+- [ ] API integration layer (in progress)
+- [ ] Group-watch blending (in progress)
+- [ ] Graduation mechanism (cold-start → behavioral catalog)
+- [ ] End-to-end evaluation and benchmarking
 
 ## Technical Highlights
 
