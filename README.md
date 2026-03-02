@@ -1,12 +1,16 @@
 # NextUp Recommender System
 
-A next-generation movie recommendation system that puts users back in the driver's seat. By combining cutting-edge sequential modeling with intelligent content understanding, NextUp solves the cold-start problem while delivering personalized, mood-aware recommendations through natural language interaction.
+Imagine you’re sitting down to watch a movie at the end of a long day. You open one streaming service after the other, scrolling through an endless array of posters and trailers. An hour has passed, and you still haven’t found what you’re looking for. 
+Imagine instead that you sit down and open an app, an app that can recommend movies across multiple streaming services all in one place. Imagine this app has a chatbot, where you can type a prompt describing what you’re currently in the mood to watch, e.g. “I’m looking for a cozy movie from the early 2000s”, “I want to watch a 90s thriller with Morgan Freeman in it”, or “Looking for something short and cheerful”. Then imagine, the app recommends exactly what you’re looking for. That’s the power of the NextUp Recommender System.
+ 
+Modern day movie recommender systems operate within streaming service echo chambers and leave no room for meaningful user input on what they are in the mood to watch in the current session. The NextUp movie recommendation system puts users back in the driving seat. By combining cutting-edge sequential modeling with intelligent content understanding, NextUp delivers personalized, mood-aware recommendations through natural language interaction.
 
 ## The Problem
 
 Traditional recommendation systems face two critical challenges:
-1. **Cold-start problem**: New movies can't be recommended until users interact with them
-2. **Loss of user agency**: Users are passive recipients of algorithmic predictions rather than active participants
+1. **Loss of user agency**: Users are passive recipients of algorithmic predictions rather than active participants
+2. **Cold-start problem**: New movies can't be recommended until users interact with them
+
 
 NextUp addresses both through a novel dual-arm architecture that blends behavioral signals with semantic content understanding.
 
@@ -17,15 +21,15 @@ NextUp implements a **dual-arm recommendation architecture** that intelligently 
 ### Behavioral Arm (Mamba4Rec)
 Learns from user interaction histories using **Mamba4Rec**, a cutting-edge sequential recommendation model based on Selective State Space Models (SSMs). Unlike Transformer-based approaches that suffer from quadratic computational complexity, Mamba4Rec efficiently handles long user behavior sequences with linear complexity—making it ideal for real-world production systems.
 
-> **Why Mamba4Rec?** Published in March 2024 and awarded Best Paper at RelKD@KDD 2024, Mamba4Rec is the first work to apply selective SSMs to sequential recommendation. It defeats both RNN and attention-based models in effectiveness AND efficiency, especially for long interaction sequences.
+> **Why Mamba4Rec?** Published in March 2024 and awarded Best Paper at RelKD@KDD 2024, Mamba4Rec is the first work to apply selective SSMs to sequential recommendation. It outperforms both RNN and attention-based models in effectiveness and efficiency, especially for long interaction sequences.
 
 ### Content Arm (Semantic Search)
 Uses **BAAI/bge-large-en-v1.5** embeddings and FAISS vector indexing over **190,000+ Wikipedia movie plots** to enable semantic search based on user queries like "something cozy and nostalgic from the early 2000s."
 
-### Intelligent Blending Layer
+## Intelligent Blending Layer
 A reranker dynamically blends behavioral and content signals based on query specificity:
-- Specific mood/genre queries → Higher weight on content arm
-- General browsing → Higher weight on behavioral arm
+- More specific mood/genre queries → Higher weight on content arm
+- General browsing → Higher weight on behavioral arm (user interaction history)
 - Cold-start items → Surfaced through content arm, graduated into behavioral catalog
 
 ## Key Features
@@ -47,45 +51,14 @@ Intelligently merges multiple user profiles for shared viewing experiences—per
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     NextUp Recommendation System             │
-└─────────────────────────────────────────────────────────────┘
-
-User Query: "I want something cozy from the 90s"
-         │
-         ├──────────────────┬──────────────────┐
-         │                  │                  │
-         v                  v                  v
-┌────────────────┐  ┌────────────────┐  ┌────────────────┐
-│ Intent Parser  │  │ Behavioral Arm │  │  Content Arm   │
-│                │  │                │  │                │
-│ Extract mood,  │  │  Mamba4Rec     │  │ BGE Embeddings │
-│ genre, era     │  │  Sequential    │  │ 190K+ plots    │
-│                │  │  Model         │  │ FAISS Index    │
-└────────────────┘  └────────────────┘  └────────────────┘
-         │                  │                  │
-         │                  v                  v
-         │          ┌───────────────────────────────┐
-         └────────> │   Adaptive Reranker (α)       │
-                    │                               │
-                    │ Blends scores based on:       │
-                    │ - Query specificity           │
-                    │ - Item cold-start status      │
-                    │ - User history depth          │
-                    └───────────────────────────────┘
-                                 │
-                                 v
-                    ┌────────────────────────┐
-                    │ Top-K Recommendations  │
-                    └────────────────────────┘
-```
+![NextUp System Architecture](NextUpSystemDiagram.drawio.png)
 
 ## Dataset & Scale
 
 - **Behavioral Training**: MovieLens-32M (32 million ratings, 162,000 movies)
 - **Content Search**: 190,000+ Wikipedia movie/TV plot summaries encoded with BGE-large embeddings
-- **Data Pipeline**: Automated Wikidata SPARQL filtering → Wikipedia plot extraction → BGE encoding with caching
+- **Content Pipeline**: Automated Wikidata SPARQL filtering → Wikipedia plot extraction → BGE encoding with caching
+- **Graduation Pipeline** (planned): Designed to track when movies accumulate sufficient user interactions to "graduate" from content-only recommendations into the behavioral arm's training catalog. Upon reaching threshold, the system will trigger Mamba4Rec retraining with the expanded dataset, enabling continuous evolution as users discover new content.
 
 ## Installation
 
@@ -168,8 +141,8 @@ This project is currently under development as part of a research initiative to 
 - [x] BGE-based content tower with FAISS indexing
 - [x] Intent parsing for mood/genre/era extraction
 - [x] Reranker with adaptive blending
+- [x] Group-watch blending with fairness-weighted aggregation
 - [ ] API integration layer (in progress)
-- [ ] Group-watch blending (in progress)
 - [ ] Graduation mechanism (cold-start → behavioral catalog)
 - [ ] End-to-end evaluation and benchmarking
 
@@ -177,22 +150,24 @@ This project is currently under development as part of a research initiative to 
 
 ### Why Dual-Arm Architecture?
 
-Traditional single-model approaches force a tradeoff:
-- **Collaborative filtering alone**: Can't recommend new items (cold-start)
-- **Content-based alone**: Ignores personalization and user behavior patterns
+Traditional approaches force a tradeoff:
+- **Collaborative filtering alone**: Can't recommend new items (cold-start), can’t adapt to user’s current mood and intent
+- **Content-based alone**: Can’t personalize based on historical user behaviour patterns 
 
-The dual-arm approach gets the best of both worlds through intelligent blending.
+The dual-arm approach leverages the strengths of each approach through intelligent blending.
 
 ### Why Mamba over Transformers?
 
-| Model Type | Complexity | Long Sequences | Production Ready |
-|------------|------------|----------------|------------------|
-| Transformer | O(n²) | Struggles with 100+ items | High memory cost |
-| Mamba4Rec | O(n) | Handles 1000+ items efficiently | Production viable |
+| Model Type | Complexity | 100 Items | 1000 Items | 10,000 Items |
+|------------|------------|-----------|------------|--------------|
+| Transformer | O(n²) | Fast | Slower | Very slow |
+| Mamba4Rec | O(n) | Fast | Fast | Fast |
 
-For users with long interaction histories (power users, binge-watchers), this efficiency difference is critical.
+While Transformers excel in many domains, their quadratic attention complexity means inference time and memory grow dramatically with sequence length. For sequential recommendation where power users may have 1000+ interaction histories, Mamba4Rec's linear scaling provides significant efficiency gains while maintaining competitive accuracy. This matters for real-time recommendation serving at scale.
 
 ### Adaptive Blending (α Parameter)
+
+Adaptive blending allows the system to rely on the respective strengths of the behavioural and content arms depending on the situation.
 
 The reranker computes a dynamic blending weight α ∈ [0,1]:
 - High specificity query ("cyberpunk thriller from 2019") → α → 0.8 (favor content)
@@ -273,6 +248,7 @@ This project builds upon Mamba4Rec:
 - [Mamba4Rec](https://github.com/chengkai-liu/Mamba4Rec) for the sequential recommendation foundation
 - [RecBole](https://recbole.io/) for the recommendation framework
 - [BAAI](https://huggingface.co/BAAI) for the BGE embedding models
+- Built with AI-assisted development workflows, utilizing Claude (LLM) from Anthropic to enhance productivity and documentation quality
 
 ---
 
