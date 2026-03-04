@@ -51,7 +51,7 @@ Intelligently merges multiple user profiles for shared viewing experiences—per
 
 ## Architecture
 
-![NextUp System Architecture](NextUpSystemDiagram.drawio.png)
+![NextUp System Architecture](NextUpRecommenderArchitecture.png)
 
 ## Dataset & Scale
 
